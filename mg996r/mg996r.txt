@@ -1,0 +1,7 @@
+🔹 컴파일 & 실행
+gcc main.c servo.c -o servo_control
+sudo ./servo_control
+
+sudo 필요: ALT 모드 설정과 /sys/class/pwm 접근 권한 때문
+
+MG996R → 외부 5~6V 전원 + Pi GND 연결 필수
