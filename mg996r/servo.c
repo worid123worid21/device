@@ -1,60 +1,82 @@
-#include <wiringPi.h>
-#include <softPwm.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <string.h>
+#include "servo.h"
 
-#define SERVO1 23 // GPIO13
-#define SERVO2 24 // GPIO19
+#define PERIOD_NS 20000000   // 20ms = 50Hz
 
-// softPWM 값 변환 (0°~180° → 5~25)
-int angle_to_softpwm(int angle) {
-    int val = 5 + (angle * 20 / 180);
-    if(val < 0) val = 0;
-    if(val > 25) val = 25;
-    return val;
-}
-
-// 서보 각도 설정
-void set_servo(int servo, int angle) {
-    softPwmWrite(servo, angle_to_softpwm(angle));
-}
-
-// 부드럽게 이동
-void move_servo_smooth(int servo, int start_angle, int end_angle, int duration_sec) {
-    int steps = 50; // 이동 단계 수
-    float delay_time = duration_sec * 1000.0 / steps; // ms
-    float delta = (float)(end_angle - start_angle) / steps;
-
-    for(int i=0; i<=steps; i++) {
-        int angle = start_angle + (int)(delta * i);
-        set_servo(servo, angle);
-        delay((int)delay_time);
+// 파일에 문자열 쓰기
+static void write_file(const char *path, const char *value)
+{
+    int fd = open(path, O_WRONLY);
+    if (fd < 0) {
+        perror(path);
+        return;
     }
+    write(fd, value, strlen(value));
+    close(fd);
 }
 
-int main(void) {
-    if(wiringPiSetup() == -1) return 1;
+// PWM 채널 초기화
+int servo_init(int chip, int channel)
+{
+    char path[100];
+    char buffer[10];
 
-    // 소프트 PWM 초기화
-    softPwmCreate(SERVO1, 0, 200);
-    softPwmCreate(SERVO2, 0, 200);
+    // export
+    sprintf(path, "/sys/class/pwm/pwmchip%d/export", chip);
+    sprintf(buffer, "%d", channel);
+    write_file(path, buffer);
+    usleep(100000);
 
-    int positions[] = {45, 90, 135, 90, 45};
-    int n = sizeof(positions)/sizeof(positions[0]);
+    // period 설정
+    sprintf(path, "/sys/class/pwm/pwmchip%d/pwm%d/period", chip, channel);
+    sprintf(buffer, "%d", PERIOD_NS);
+    write_file(path, buffer);
 
-    printf("Starting Smooth Servo Test\n");
+    // 초기 듀티 1.5ms (중앙)
+    sprintf(path, "/sys/class/pwm/pwmchip%d/pwm%d/duty_cycle", chip, channel);
+    sprintf(buffer, "%d", 1500000);
+    write_file(path, buffer);
 
-    for(int i=0; i<n; i++) {
-        int target = positions[i];
-        printf("Moving to %d°\n", target);
-        // 두 서보 동시에 부드럽게 이동
-        move_servo_smooth(SERVO1, positions[(i==0)?0:i-1], target, 5); // 5초 이동
-        move_servo_smooth(SERVO2, positions[(i==0)?0:i-1], target, 5);
-        printf("Holding %d° for 3 seconds\n", target);
-        sleep(3); // 각 구간 3초 머무르기
-    }
+    // enable
+    sprintf(path, "/sys/class/pwm/pwmchip%d/pwm%d/enable", chip, channel);
+    write_file(path, "1");
 
-    printf("Smooth Servo Test Completed\n");
     return 0;
 }
 
+// 목표 각도로 서보 이동
+int servo_set_angle(int chip, int channel, float angle)
+{
+    if (angle < 0) angle = 0;
+    if (angle > 180) angle = 180;
+
+    char path[100];
+    char buffer[20];
+
+    // MG996R: 0.5ms ~ 2.5ms (500000~2500000 ns)
+    int duty = 500000 + (angle / 180.0) * 2000000;
+
+    sprintf(path, "/sys/class/pwm/pwmchip%d/pwm%d/duty_cycle", chip, channel);
+    sprintf(buffer, "%d", duty);
+    write_file(path, buffer);
+
+    return 0;
+}
+
+// PWM 채널 해제
+void servo_cleanup(int chip, int channel)
+{
+    char path[100];
+    char buffer[10];
+
+    sprintf(path, "/sys/class/pwm/pwmchip%d/pwm%d/enable", chip, channel);
+    write_file(path, "0");
+
+    sprintf(path, "/sys/class/pwm/pwmchip%d/unexport", chip);
+    sprintf(buffer, "%d", channel);
+    write_file(path, buffer);
+}
