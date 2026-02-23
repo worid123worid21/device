@@ -5,3 +5,18 @@ sudo ./servo_control
 sudo 필요: ALT 모드 설정과 /sys/class/pwm 접근 권한 때문
 
 MG996R → 외부 5~6V 전원 + Pi GND 연결 필수
+
+--------
+
+최신 버전
+
+./servo_p 실행
+
+manual
+w/s(tilt) -> 상/하 움직임 (가상리밋_70-170)
+a/d(pan) -> 좌/우 움직임 (가상리밋_0-180)
+o -> 현재 위치 저장
+r -> 저장 위치로 이동
+e -> 초기 위치 (pan 90, tilt 90)
+p -> 각도 입력 순서 servo1(tilt), servo2(pan)
+미입력은 최저값으로 감
