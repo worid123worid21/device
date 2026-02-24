@@ -157,7 +157,8 @@ static void poll_keys(int key_state[KEY_COUNT],
 //    단순 합산 시 대각선 이동이 단일 방향보다 √2배 빠름
 //    → 벡터 크기를 1로 정규화 후 ANGLE_STEP 을 곱해
 //       어느 방향이든 동일한 이동 속도 보장
-// ─────────────────────────────────────────────
+// ─────────────────────────────────────────────p180
+
 static void calc_delta(const int key_state[KEY_COUNT],
                        float *dpan, float *dtilt)
 {
