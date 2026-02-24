@@ -1,3 +1,4 @@
+//라즈베리에 직접 키보드 연결
 # MG996R Pan/Tilt Controller
 
 라즈베리파이 4 (BCM2711) + Linux sysfs PWM 기반 MG996R 서보모터 Pan/Tilt 제어 모듈
