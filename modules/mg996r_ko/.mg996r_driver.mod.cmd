@@ -1,0 +1,1 @@
+savedcmd_/home/veda/DEVICE/modules/mg996r_ko/mg996r_driver.mod := printf '%s\n'   mg996r_driver.o | awk '!x[$$0]++ { print("/home/veda/DEVICE/modules/mg996r_ko/"$$0) }' > /home/veda/DEVICE/modules/mg996r_ko/mg996r_driver.mod
