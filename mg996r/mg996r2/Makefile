@@ -1,15 +1,18 @@
 CC      = gcc
 CFLAGS  = -Wall -Wextra -O2 -pthread
-
 TARGET  = pantilt_ctrl
 SRCS    = main.c servo_module.c
+OBJS    = $(SRCS:.c=.o)
 
 all: $(TARGET)
 
-$(TARGET): $(SRCS) servo_module.h
-	$(CC) $(CFLAGS) -o $(TARGET) $(SRCS) -lm
+$(TARGET): $(OBJS)
+	$(CC) $(CFLAGS) -o $@ $^ -lm
+
+%.o: %.c
+	$(CC) $(CFLAGS) -c -o $@ $<
 
 clean:
-	rm -f $(TARGET) *.o
+	rm -f $(OBJS) $(TARGET)
 
 .PHONY: all clean

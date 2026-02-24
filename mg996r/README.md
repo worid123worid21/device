@@ -1,6 +1,6 @@
 # MG996R Pan/Tilt Controller
 
-라즈베리파이 4 (BCM2711) + Linux sysfs PWM 기반 MG996R 서보모터 Pan/Tilt 제어 모듈
+라즈베리파이 4 (BCM2711) + Linux sysfs PWM 기반 MG996R 서보모터 Pan/Tilt 제어
 
 ---
 
@@ -10,7 +10,7 @@
 .
 ├── servo_module.h   # Pan/Tilt 모듈 헤더 (API 정의)
 ├── servo_module.c   # Pan/Tilt 모듈 구현체
-├── main.c           # 키보드 제어 메인
+├── main.c           # 키보드 제어 메인 (evdev 기반)
 └── Makefile
 ```
 
@@ -18,10 +18,12 @@
 
 ## 하드웨어 연결
 
-| 서보 | PWM 칩 | PWM 채널 | 역할 |
-|------|--------|----------|------|
-| MG996R #1 | pwmchip0 | pwm0 | Pan (좌우) |
-| MG996R #2 | pwmchip0 | pwm1 | Tilt (상하) |
+`/boot/firmware/config.txt` 설정: `dtoverlay=pwm-2chan` (기본값)
+
+| 서보 역할 | PWM | GPIO | 물리 핀 |
+|----------|-----|------|---------|
+| Pan (좌우) | pwmchip0/pwm0 | GPIO19 | **35번** |
+| Tilt (상하) | pwmchip0/pwm1 | GPIO18 | **12번** |
 
 MG996R 신호 규격: 50Hz / 0.5ms(0°) ~ 2.5ms(180°)
 
@@ -34,26 +36,43 @@ make
 sudo ./pantilt_ctrl
 ```
 
-> sysfs PWM 접근에 root 권한 필요
+> `sudo` 필요: `/dev/input/eventX` 접근 권한
+> 권한 영구 부여: `sudo usermod -aG input $USER` 후 재로그인
 
 ---
 
 ## 조작 키
 
+### 방향키 레이아웃 (USB 키보드 직접 연결)
+
+```
+Q(좌상)  W(상)   E(우상)
+A(좌)    ─────   D(우)
+Z(좌하)  X(하)   C(우하)
+```
+
+| 키 | Pan | Tilt |
+|----|-----|------|
+| `Q` | 좌 | 상 |
+| `W` | ─  | 상 |
+| `E` | 우 | 상 |
+| `A` | 좌 | ─  |
+| `D` | 우 | ─  |
+| `Z` | 좌 | 하 |
+| `X` | ─  | 하 |
+| `C` | 우 | 하 |
+
+대각선(Q/E/Z/C) 이동 시 벡터 정규화(`step / √2`)로 모든 방향 동일한 속도 보장
+
+### 커맨드키
+
 | 키 | 동작 |
 |----|------|
-| `W` | Tilt 위 |
-| `S` | Tilt 아래 |
-| `A` | Pan 왼쪽 |
-| `D` | Pan 오른쪽 |
-| `WA` / `WD` / `SA` / `SD` | 대각선 이동 (속도 정규화 적용) |
+| `S` | 중앙(90°) 복귀 |
 | `O` | 현재 위치 저장 |
-| `R` | 저장 위치로 이동 |
-| `E` | 중앙(90°)으로 복귀 |
+| `R` | 저장 위치로 이동 (recall) |
 | `P` | 각도 직접 입력 |
-| `Q` | 종료 (중앙 복귀 후 PWM 해제) |
-
-대각선 이동 시 벡터 정규화(`1/√2`)를 적용하여 단일 방향과 동일한 속도로 이동합니다.
+| `ESC` | 종료 (중앙 복귀 후 PWM 해제) |
 
 ---
 
@@ -66,36 +85,27 @@ sudo ./pantilt_ctrl
 
 ---
 
-## 모듈 API 요약
-
-다른 모듈(카메라 추적, GPS 등)에서 아래와 같이 사용합니다.
+## servo_module API
 
 ```c
 #include "servo_module.h"
 
 PanTiltUnit pt;
-
-// 초기화 (chip=0, pan=ch0, tilt=ch1)
-pantilt_init(&pt, 0, 0, 1);
-
-// Pan/Tilt 동시 이동
-pantilt_set(&pt, 120.0f, 60.0f);
-
-// 중앙 복귀
-pantilt_center(&pt);
-
-// 해제
-pantilt_cleanup(&pt);
+pantilt_init(&pt, 0, 0, 1);        // chip=0, pan=ch0(GPIO18), tilt=ch1(GPIO19)
+pantilt_set(&pt, 120.0f, 60.0f);   // Pan/Tilt 동시 이동
+pantilt_center(&pt);                // 중앙 복귀
+pantilt_cleanup(&pt);               // 해제
 ```
 
-멀티스레드 환경에서 `pantilt_set()`은 내부 mutex로 보호되어 안전하게 호출 가능합니다.
+멀티스레드 환경에서 `pantilt_set()`은 내부 mutex로 보호됩니다.
 
 ---
 
 ## 주요 설계
 
 - **sysfs PWM**: `/sys/class/pwm/pwmchip%d/pwm%d/` 직접 제어
+- **evdev**: USB 키보드 `/dev/input/eventX` 하드웨어 이벤트 직접 읽기 → 진짜 동시 입력 감지
+- **대각선 정규화**: 이동 벡터를 단위 벡터로 정규화 후 `ANGLE_STEP` 적용
 - **스레드 안전**: `ServoChannel`마다 `pthread_mutex_t` 내장
-- **에러 처리**: 모든 API가 `ServoError` 반환 (`servo_strerror()`로 메시지 확인)
-- **동시 입력**: `read()`로 stdin 버퍼를 매 루프마다 일괄 처리하여 키 조합 감지
-- **대각선 정규화**: 이동 벡터 크기를 1로 정규화하여 방향과 무관한 일정 속도 보장
+- **에러 처리**: 모든 API가 `ServoError` 반환
+- **엣지 트리거**: S/O/R/P/ESC 커맨드키는 누른 순간 1회만 동작
