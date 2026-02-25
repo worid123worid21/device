@@ -1,3 +1,74 @@
+//다른 환경 설정
+MG996R + L298N DC 모터 제어 README
+1️⃣ 환경 및 하드웨어
+
+Raspberry Pi: 3B+, 4, 또는 5 (arm64, 6.12.62+rpt-rpi-v8 커널 기준)
+
+연결 핀맵
+MG996R 서보 모터 2개 (HW PWM)
+서보	GPIO	핀	역할
+Servo1	GPIO18	12	팬/틸트 모터
+Servo2	GPIO19	35	팬/틸트 모터
+
+⚠ 모터 전원은 Raspberry Pi 5V 대신 외부 전원 사용 권장
+⚠ GND는 Pi와 공통 연결
+
+2️⃣ Raspberry Pi 설정
+2.1 커널 모듈 확인
+uname -r 
+현재 부팅된 커널 버전 확인
+모듈 빌드 시 vermagic과 일치해야 함
+2.2 PWM, I2C, UART 활성화
+/boot/firmware/config.txt 또는 /boot/config.txt 확인
+
+dtoverlay=pwm-2chan
+# IC2 필요 시 dtparam=i2c_arm=on
+# UART 필요 시 dtparam=uart=on
+
+재부팅 후 확인:
+ls /sys/class/pwm/
+# pwmchip0 출력 확인
+PWM이 나타나야 서보 모듈 제어 가능
+
+3️⃣ 커널 모듈 적재 및 실행
+cd ~/DEV
+
+# 커널 모듈 삽입
+sudo insmod mg996r_driver.ko
+
+# 모듈 확인
+lsmod | grep mg996r_driver
+
+# 디바이스 파일 권한 확인
+ls -l /dev/mg996r
+
+# 테스트용 실행 (root 권한)
+sudo ./mg996r_main
+일반 사용자 접근 허용:
+sudo chmod 666 /dev/mg996r
+
+
+4️⃣ 모터 제어 구조
+MG996R 서보 (팬/틸트)
+HW PWM 채널 사용
+커널 모듈 (mg996r_driver) 통해 제어
+/dev/mg996r를 open 후 ioctl 또는 사용자 공간 명령으로 각 서보 각도 설정
+
+
+5️⃣ 전체 제어 순서 예시
+# 1. 커널 모듈 확인
+uname -r
+
+# 2. PWM, I2C 활성화 확인 및 /sys/class/pwm/ 확인
+ls /sys/class/pwm/
+
+# 3. 모듈 적재 및 실행
+sudo insmod mg996r_driver.ko
+sudo ./mg996r_main
+
+
+// 아래 항목은 사용 설명(위 내용과 중복 있음 커널 설정이 같은 경우는 아래와 같이 사용)
+---
 MG996R Pan/Tilt Servo Driver & Controller
 개요
 
@@ -19,13 +90,9 @@ Tilt 각도 범위	0° ~ 180°
 실시간 9방향 키보드 제어 (QWE / AD / ZXC)
 
 S: 90° 복귀
-
 O: 현재 위치 저장
-
 R: 저장 위치 복귀
-
 P: Pan/Tilt 각도 수동 입력 → Enter 후 이동
-
 T: 종료 및 중앙 복귀
 
 커널 모듈 설치
