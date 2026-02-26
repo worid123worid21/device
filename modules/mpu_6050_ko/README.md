@@ -1,7 +1,7 @@
 # mpu_6050 — MPU-6050 (GY-521) Linux Kernel Driver
 
 Raspberry Pi에서 MPU-6050 센서를 **커널 모듈(.ko)** 로 구동하고,  
-유저스페이스에서 **sysfs**를 통해 데이터를 읽는 프로젝트입니다.
+유저스페이스에서 **sysfs**를 통해 Pitch / Roll 각도와 가속도를 읽는 프로젝트입니다.
 
 ---
 
@@ -77,11 +77,12 @@ make clean    # 빌드 결과물 전체 삭제
 ## 출력 예시
 
 ```
-MPU-6050 (Kernel Driver via sysfs) - Roll/Pitch/Yaw Demo
+MPU-6050 Pitch / Roll Monitor  (Ctrl+C to exit)
 
-Pitch: -1.23°, Roll: 0.87°, Yaw: 0.04°
-Accel (g): X: -0.02  Y: 0.01  Z: 1.00
-Gravity |g|: 1.00
+[INFO] Gyro calibration done.
+
+Pitch:   -1.23°  |  Roll:    0.87°
+Accel (g)  X: -0.021  Y:  0.015  Z:  0.999
 ```
 
 ---
@@ -103,7 +104,7 @@ Gravity |g|: 1.00
 ```bash
 # 직접 읽기 예시
 cat /sys/bus/i2c/devices/1-0068/accel_x
-cat /sys/bus/i2c/devices/1-0068/gyro_z
+cat /sys/bus/i2c/devices/1-0068/gyro_x
 
 # 캘리브레이션 재실행
 echo 1 | sudo tee /sys/bus/i2c/devices/1-0068/calibrate
@@ -124,17 +125,30 @@ mpu_6050_main  (유저 공간)
     │
     ├── accel_{x,y,z}  읽기 → 가속도 (mg → g 변환)
     ├── gyro_{x,y,z}   읽기 → 각속도 (m°/s → °/s 변환)
-    └── Complementary Filter → Pitch / Roll / Yaw 계산
+    └── Complementary Filter → Pitch / Roll 계산
 ```
 
 ### 센서 퓨전 (Complementary Filter)
 
 | 값 | 계산 방법 |
 |----|----------|
-| Pitch / Roll | 가속도 + 자이로 퓨전 (α = 0.96) |
-| Yaw | 자이로 적분만 (가속도로 보정 불가) |
+| Pitch | 가속도 + 자이로 Y축 퓨전 (α = 0.96) |
+| Roll | 가속도 + 자이로 X축 퓨전 (α = 0.96) |
 
-> Yaw는 드리프트가 누적됩니다. 절대 방위가 필요하면 지자기 센서(HMC5883L 등)를 추가하세요.
+**Pitch / Roll 독립 공식:**
+
+```
+accel_pitch = atan2(-ax, sqrt(ay² + az²))
+accel_roll  = atan2( ay, sqrt(ax² + az²))  ← 핵심
+```
+
+roll 공식의 분모를 `sqrt(ax² + az²)` 로 사용하면 pitch 방향으로 기울여도  
+분모 크기가 보존되어 roll 값이 간섭받지 않습니다.  
+기존 `atan2(ay, az)` 공식은 pitch 변화 시 `az` 가 바뀌면서 roll도 같이 튀는 문제가 있습니다.
+
+> **Z축(Yaw)은 사용하지 않습니다.**  
+> Yaw는 가속도로 보정이 불가능하여 자이로 적분 오차(drift)가 누적됩니다.  
+> 절대 방위가 필요하면 지자기 센서(HMC5883L 등)를 추가하세요.
 
 ---
 
@@ -154,7 +168,6 @@ sudo i2cdetect -y 1
 
 **커널 헤더 버전 불일치**
 ```bash
-uname -r                        # 현재 커널 버전 확인
-ls /lib/modules/$(uname -r)/build  # 헤더 경로 존재 여부 확인
+uname -r                              # 현재 커널 버전 확인
+ls /lib/modules/$(uname -r)/build     # 헤더 경로 존재 여부 확인
 ```
-
