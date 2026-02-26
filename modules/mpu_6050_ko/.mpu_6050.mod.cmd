@@ -1,0 +1,1 @@
+savedcmd_/home/veda/DEVICE/modules/mpu_6050_ko/mpu_6050.mod := printf '%s\n'   mpu6050_driver.o | awk '!x[$$0]++ { print("/home/veda/DEVICE/modules/mpu_6050_ko/"$$0) }' > /home/veda/DEVICE/modules/mpu_6050_ko/mpu_6050.mod

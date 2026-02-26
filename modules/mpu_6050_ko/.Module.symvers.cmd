@@ -1,0 +1,1 @@
+savedcmd_/home/veda/DEVICE/modules/mpu_6050_ko/Module.symvers :=  scripts/mod/modpost -M -m -a      -o /home/veda/DEVICE/modules/mpu_6050_ko/Module.symvers -T /home/veda/DEVICE/modules/mpu_6050_ko/modules.order -i Module.symvers -e 

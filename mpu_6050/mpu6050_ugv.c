@@ -7,10 +7,10 @@
 #include <math.h>
 #include <time.h>
 
-#define MPU_ADDR 0x68
-#define PWR_MGMT_1   0x6B
-#define ACCEL_XOUT_H 0x3B
-#define GYRO_XOUT_H  0x43
+#define MPU_ADDR 0x68         // MPU-6050의 I2C 주소 (AD0=LOW → 0x68, HIGH → 0x69)
+#define PWR_MGMT_1   0x6B     // 전원 관리 레지스터 주소
+#define ACCEL_XOUT_H 0x3B     // 가속도 X축 상위 바이트 레지스터 주소
+#define GYRO_XOUT_H  0x43     // 자이로 X축 상위 바이트 레지스터 주소
 
 #define ACCEL_SCALE 16384.0
 #define GYRO_SCALE  131.0
