@@ -267,6 +267,6 @@ static struct i2c_driver mpu6050_driver = {
 
 module_i2c_driver(mpu6050_driver);
 
-MODULE_AUTHOR("veda");
+MODULE_AUTHOR("GANGHEE");
 MODULE_DESCRIPTION("MPU-6050 (GY-521) I2C Kernel Driver");
 MODULE_LICENSE("GPL v2");
