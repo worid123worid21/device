@@ -3,171 +3,196 @@
 #include <stdint.h>
 #include <math.h>
 #include <time.h>
-#include <unistd.h>
 #include <sys/stat.h>
 
 #define BASE_PATH "/sys/bus/i2c/devices/1-0068/"
-//#define G_TO_MS2 9.80665 중력 가속도 사용시
-#define G_TO_MS2 1
 
 #ifndef M_PI
 #define M_PI 3.14159265358979323846
 #endif
 
-/* -------------------------------------------------- */
-/* 드라이버 존재 확인 (accel_x 파일 기준) */
-/* -------------------------------------------------- */
-int driver_loaded()
+/* =====================================================
+ * 설정값
+ * ===================================================== */
+#define ALPHA          0.96    /* Complementary Filter 계수 */
+#define LOOP_US        2000L   /* 루프 주기: 2ms            */
+#define PRINT_MS       500.0   /* 출력 주기: 500ms          */
+
+/* =====================================================
+ * Yaw drift 억제 임계값
+ * 이 값(m°/s) 이하의 자이로 Z 값은 0으로 처리
+ * → 정지 시 yaw가 천천히 돌아가는 현상 제거
+ * ===================================================== */
+#define GYRO_Z_DEADZONE  15    /* 단위: m°/s */
+
+/* =====================================================
+ * 드라이버 로드 확인
+ * ===================================================== */
+static int driver_loaded(void)
 {
     struct stat st;
     return (stat(BASE_PATH "accel_x", &st) == 0);
 }
 
-/* -------------------------------------------------- */
-/* sysfs 값 읽기 */
-/* -------------------------------------------------- */
-int read_sysfs_value(const char *name)
+/* =====================================================
+ * sysfs 읽기
+ * ===================================================== */
+static int read_sysfs(const char *name)
 {
-    char path[128];
-    char buf[32];
+    char path[128], buf[32];
     FILE *fp;
 
     snprintf(path, sizeof(path), "%s%s", BASE_PATH, name);
-
     fp = fopen(path, "r");
-    if (!fp)
-        return 0;
-
-    fgets(buf, sizeof(buf), fp);
+    if (!fp) return 0;
+    if (!fgets(buf, sizeof(buf), fp)) { fclose(fp); return 0; }
     fclose(fp);
-
     return atoi(buf);
 }
 
-/* -------------------------------------------------- */
-void sleep_us(long us)
+/* =====================================================
+ * 루프 슬립
+ * ===================================================== */
+static void sleep_us(long us)
 {
     struct timespec ts;
-    ts.tv_sec = us / 1000000L;
+    ts.tv_sec  = us / 1000000L;
     ts.tv_nsec = (us % 1000000L) * 1000L;
     nanosleep(&ts, NULL);
 }
 
-/* -------------------------------------------------- */
-double get_delta_time()
+/* =====================================================
+ * delta time (초)
+ * ===================================================== */
+static double get_dt(void)
 {
-    static struct timespec last = {0,0};
+    static struct timespec last = {0, 0};
     struct timespec now;
+    double dt;
+
     clock_gettime(CLOCK_MONOTONIC, &now);
 
-    double dt;
     if (last.tv_sec == 0 && last.tv_nsec == 0)
-        dt = 0.01;
+        dt = LOOP_US / 1e6;
     else
-        dt = (now.tv_sec - last.tv_sec) +
-             (now.tv_nsec - last.tv_nsec)/1e9;
+        dt = (now.tv_sec  - last.tv_sec) +
+             (now.tv_nsec - last.tv_nsec) / 1e9;
 
     last = now;
     return dt;
 }
 
-/* -------------------------------------------------- */
-double clamp90(double angle)
+/* =====================================================
+ * 각도 클램프 ±90°
+ * ===================================================== */
+static double clamp90(double v)
 {
-    if(angle > 90.0) return 90.0;
-    if(angle < -90.0) return -90.0;
-    return angle;
+    if (v >  90.0) return  90.0;
+    if (v < -90.0) return -90.0;
+    return v;
 }
 
-/* -------------------------------------------------- */
-int main()
+/* =====================================================
+ * main
+ * ===================================================== */
+int main(void)
 {
     if (!driver_loaded()) {
-        printf("MPU-6050 kernel module not loaded.\n");
-        printf("Please run: sudo insmod mpu_6050.ko\n");
+        printf("[ERROR] MPU-6050 kernel module not loaded.\n");
+        printf("        sudo insmod mpu_6050.ko\n");
         return 1;
     }
 
-    printf("MPU-6050 (Kernel Driver via sysfs) - Roll/Pitch/Yaw Demo\n\n");
+    printf("MPU-6050 (Kernel Driver via sysfs)\n");
+    printf("Pitch / Roll / Yaw  +  Accel  Monitor\n\n");
 
-    /* 초기 캘리브레이션 실행 */
+    /* 커널 캘리브레이션 재실행 */
     FILE *cal = fopen(BASE_PATH "calibrate", "w");
-    if (cal) {
-        fprintf(cal, "1");
-        fclose(cal);
-    }
+    if (cal) { fprintf(cal, "1"); fclose(cal); }
+    printf("[INFO] Gyro calibration done.\n\n");
 
-    double pitch = 0, roll = 0, yaw = 0;
-    double alpha = 0.96;
-    int first_loop = 1;
+    double pitch = 0.0, roll = 0.0, yaw = 0.0;
     double print_timer = 0.0;
+    int    first = 1;
 
     while (1) {
-        double dt = get_delta_time();
+        double dt = get_dt();
 
-        /* sysfs 단위:
-           accel = mg
-           gyro  = m°/s
-        */
-        int ax = read_sysfs_value("accel_x");
-        int ay = read_sysfs_value("accel_y");
-        int az = read_sysfs_value("accel_z");
+        /* ── 원시 데이터 읽기 ──────────────────────── */
+        int ax_mg = read_sysfs("accel_x");
+        int ay_mg = read_sysfs("accel_y");
+        int az_mg = read_sysfs("accel_z");
+        int gx_m  = read_sysfs("gyro_x");
+        int gy_m  = read_sysfs("gyro_y");
+        int gz_m  = read_sysfs("gyro_z");
 
-        int gx = read_sysfs_value("gyro_x");
-        int gy = read_sysfs_value("gyro_y");
-        int gz = read_sysfs_value("gyro_z");
+        /* ── 단위 변환 ─────────────────────────────── */
+        double ax = ax_mg / 1000.0;   /* g */
+        double ay = ay_mg / 1000.0;
+        double az = az_mg / 1000.0;
 
-        /* 단위 변환 */
-        double accel_x = (ax / 1000.0) * G_TO_MS2;
-        double accel_y = (ay / 1000.0) * G_TO_MS2;
-        double accel_z = (az / 1000.0) * G_TO_MS2;
+        double gx = gx_m / 1000.0;   /* °/s */
+        double gy = gy_m / 1000.0;
+        double gz = gz_m / 1000.0;
 
-        double gyro_x = gx / 1000.0; // deg/s
-        double gyro_y = gy / 1000.0;
-        double gyro_z = gz / 1000.0;
+        /* ── 가속도 기반 pitch / roll ──────────────── *
+         *                                               *
+         *  pitch: X축 기울기                            *
+         *    → atan2(-ax, sqrt(ay²+az²))               *
+         *                                               *
+         *  roll : Y축 기울기 (개선된 공식)              *
+         *    → atan2(ay, az >= 0 ? norm : -norm)        *
+         *    기존 atan2(ay, az) 는 az 부호 변화(뒤집힘) *
+         *    시 180° 점프 + pitch 변화에 roll이         *
+         *    같이 튀는 문제 있음 → norm 기반으로 수정   *
+         * ─────────────────────────────────────────── */
+        double norm_yz = sqrt(ay * ay + az * az);
 
-        /* 가속도 기반 각도 계산 */
-        double accel_pitch = atan2(-accel_x,
-                                   sqrt(accel_y*accel_y + accel_z*accel_z))
-                             * 180.0 / M_PI;
-        double accel_roll  = atan2(accel_y, accel_z)
-                             * 180.0 / M_PI;
+        double accel_pitch = atan2(-ax, norm_yz) * 180.0 / M_PI;
 
-        if(first_loop) {
+        /* roll: az 부호에 따라 분기 → pitch 변화에 독립적 */
+        double accel_roll;
+        if (az >= 0.0)
+            accel_roll = atan2( ay,  norm_yz) * 180.0 / M_PI;
+        else
+            accel_roll = atan2(-ay, -norm_yz) * 180.0 / M_PI;
+
+        /* ── 첫 루프: 가속도 기반으로 초기화 ─────── */
+        if (first) {
             pitch = accel_pitch;
             roll  = accel_roll;
             yaw   = 0.0;
-            first_loop = 0;
+            first = 0;
+            sleep_us(LOOP_US);
+            continue;
         }
 
-        /* Complementary Filter 적용 */
-        roll  = alpha * (roll + gyro_x * dt) + (1 - alpha) * accel_roll;
-        pitch = alpha * (pitch + gyro_y * dt) + (1 - alpha) * accel_pitch;
-        yaw   += gyro_z * dt; // yaw는 자이로 적분만
+        /* ── Complementary Filter ─────────────────── *
+         *  pitch: gyro_y 적분 + 가속도 보정           *
+         *  roll : gyro_x 적분 + 가속도 보정           *
+         * ─────────────────────────────────────────── */
+        pitch = ALPHA * (pitch + gy * dt) + (1.0 - ALPHA) * accel_pitch;
+        roll  = ALPHA * (roll  + gx * dt) + (1.0 - ALPHA) * accel_roll;
 
-        /* 중력 크기 계산 */
-        double g_mag = sqrt(accel_x*accel_x +
-                            accel_y*accel_y +
-                            accel_z*accel_z);
+        /* ── Yaw: 자이로 적분 (deadzone으로 drift 억제) */
+        if (abs(gz_m) > GYRO_Z_DEADZONE)
+            yaw += gz * dt;
 
-        print_timer += dt*1000;
-        if(print_timer >= 500.0) { // 0.5초마다 출력
+        /* ── 중력 크기 ──────────────────────────────── */
+        double g_mag = sqrt(ax*ax + ay*ay + az*az);
+
+        /* ── 출력 (500ms마다) ────────────────────────── */
+        print_timer += dt * 1000.0;
+        if (print_timer >= PRINT_MS) {
             print_timer = 0.0;
 
-            printf("Pitch: %.2f°, Roll: %.2f°, Yaw: %.2f°\n",
+            printf("Pitch: %7.2f°  Roll: %7.2f°  Yaw: %8.2f°\n",
                    clamp90(pitch), clamp90(roll), yaw);
-
-            // m/s 단위 사용 시 활성화
-            // printf("Accel (m/s²): X: %.2f Y: %.2f Z: %.2f\n",
-            //        accel_x, accel_y, accel_z);
-
-            printf("Accel (g): X: %.2f Y: %.2f Z: %.2f\n",
-                   accel_x, accel_y, accel_z);
-
-            printf("Gravity |g|: %.2f\n\n", g_mag);
+            printf("Accel (g):  X: %6.3f  Y: %6.3f  Z: %6.3f  |g|: %.3f\n\n",
+                   ax, ay, az, g_mag);
         }
 
-        sleep_us(2000); // 2ms
+        sleep_us(LOOP_US);
     }
 
     return 0;
