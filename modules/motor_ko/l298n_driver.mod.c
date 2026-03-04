@@ -19,24 +19,22 @@ __section(".gnu.linkonce.this_module") = {
 static const struct modversion_info ____versions[]
 __used __section("__versions") = {
 	{ 0x92997ed8, "_printk" },
-	{ 0x47229b5c, "gpio_request" },
-	{ 0xa0c562db, "gpio_to_desc" },
-	{ 0x7d896ede, "gpiod_direction_output_raw" },
+	{ 0xdf484963, "device_destroy" },
+	{ 0x6775d5d3, "class_destroy" },
+	{ 0x27271c6b, "cdev_del" },
+	{ 0x6091b333, "unregister_chrdev_region" },
+	{ 0xedc03953, "iounmap" },
+	{ 0xaf56600a, "arm64_use_ng_mappings" },
+	{ 0x40863ba1, "ioremap_prot" },
 	{ 0xe3ec2f2b, "alloc_chrdev_region" },
 	{ 0xa01f13a6, "cdev_init" },
 	{ 0x3a6d85d3, "cdev_add" },
 	{ 0x59c02473, "class_create" },
 	{ 0xb63fdcdb, "device_create" },
-	{ 0x6775d5d3, "class_destroy" },
-	{ 0x27271c6b, "cdev_del" },
-	{ 0x6091b333, "unregister_chrdev_region" },
-	{ 0xfe990052, "gpio_free" },
-	{ 0xf4d3665c, "gpiod_set_raw_value" },
-	{ 0xdf484963, "device_destroy" },
 	{ 0x474e54d2, "module_layout" },
 };
 
 MODULE_INFO(depends, "");
 
 
-MODULE_INFO(srcversion, "0A4723357FFE876EA9346F6");
+MODULE_INFO(srcversion, "0925FAF116D18834E4C297A");
