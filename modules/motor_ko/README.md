@@ -114,6 +114,98 @@ make unload
 
 ---
 
+## 적재 후 사용법 (단계별)
+
+### Step 1. 모듈 적재
+
+```bash
+sudo insmod l298n_driver.ko
+```
+
+### Step 2. 적재 확인
+
+```bash
+# 모듈 목록 확인
+lsmod | grep l298n
+
+# 디바이스 노드 생성 확인
+ls -l /dev/l298n
+
+# 커널 로그 확인 (핀 매핑 출력됨)
+dmesg | tail -5
+```
+
+정상 적재 시 `dmesg` 출력 예:
+```
+l298n: 드라이버 로드 완료 (major=240)
+l298n: 핀 매핑 E1=BCM16(Phy36) M1=BCM20(Phy38) / E2=BCM17(Phy11) M2=BCM27(Phy13)
+```
+
+### Step 3. 권한 설정 (sudo 없이 실행하려면)
+
+```bash
+sudo chmod 666 /dev/l298n
+```
+
+### Step 4. 앱 실행
+
+```bash
+sudo ./motor_ctrl
+```
+
+실행 화면:
+```
+=== L298N 방향키 제어 ===
+  ↑  전진    ↓  후진
+  ←  좌회전  →  우회전
+  q  종료
+```
+
+방향키를 누르면 즉시 모터가 동작하고, `q`를 누르면 정지 후 종료됩니다.
+
+### Step 5. 종료 및 모듈 제거
+
+```bash
+# 앱에서 q 눌러 종료 후
+sudo rmmod l298n_driver
+
+# 제거 확인
+lsmod | grep l298n     # 아무것도 안 나오면 정상
+dmesg | tail -3        # "l298n: 드라이버 언로드" 확인
+```
+
+---
+
+### 부팅 시 자동 적재 (선택)
+
+```bash
+# 1. 모듈을 커널 경로에 복사
+sudo cp l298n_driver.ko /lib/modules/$(uname -r)/extra/
+
+# 2. 모듈 의존성 갱신
+sudo depmod -a
+
+# 3. 부팅 시 자동 로드 등록
+echo "l298n_driver" | sudo tee /etc/modules-load.d/l298n.conf
+
+# 4. 재부팅 후 확인
+sudo reboot
+lsmod | grep l298n
+```
+
+---
+
+### 문제 해결
+
+| 증상 | 원인 | 해결 |
+|------|------|------|
+| `/dev/l298n` 없음 | 모듈 미적재 | `sudo insmod l298n_driver.ko` |
+| `gpio_request 실패` | 핀 충돌 | `sudo rmmod` 후 핀 사용 확인 |
+| `ioctl 실패` | 권한 없음 | `sudo` 또는 `chmod 666 /dev/l298n` |
+| 모터 무반응 | 핀 매핑 불일치 | `l298n.h` GPIO 번호 재확인 |
+
+---
+
 ## 동작 구조
 
 ```
