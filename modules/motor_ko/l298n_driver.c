@@ -10,7 +10,7 @@
 #include "l298n.h"
 
 MODULE_LICENSE("GPL");
-MODULE_AUTHOR("l298n");
+MODULE_AUTHOR("GNAGHEE");
 MODULE_DESCRIPTION("L298N DC Motor Driver - BCM2711 direct register");
 MODULE_VERSION("4.2");
 
